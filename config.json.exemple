@@ -1,0 +1,11 @@
+{
+"layers": { 
+	"1": "http://url_serveur_wms_avec_param_layers&LAYERS=IGNF_PVA_1-0__1947-09-15__C2208-0041_1947_F2208-2308_0006",
+	"2": "http://url_serveur_wms_avec_param_layers&LAYERS=IGNF_PVA_1-0__1947-09-15__C2208-0041_1947_F2208-2308_0008"
+},
+"resolution": 1,
+"shapefile": "composition.shp",
+"pas": 2000,
+"n_bande": 3,
+"n_thread_max": 1
+}
