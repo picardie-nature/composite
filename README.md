@@ -1,4 +1,4 @@
 composite
 =========
 
-Création d'une image composite à partir de service wms
+Création d'une image composite à partir de services wms
