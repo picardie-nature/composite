@@ -174,12 +174,6 @@ class Composite:
 			"VERSION": "1.1.1",
 			"REQUEST": "GetMap"
 		}
-		url = "%(layer)s&BBOX=%(bbox)s&WIDTH=%(width)d&HEIGHT=%(height)d&FORMAT=image%%2Fpng&SRS=EPSG%%3A2154&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap" % {
-			"layer": layer,
-			"bbox": bbox,
-			"width": int(width),
-			"height": int(height)
-		}
 		url = "%s&%s"%(layer,urllib.urlencode(args))
 		print "download", url
 		fichier, entetes = urllib.urlretrieve(url)
