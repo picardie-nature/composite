@@ -103,7 +103,7 @@ class ThreadComposite(threading.Thread):
 		dest = None
 		
 		if self.compo.conf["n_bande"] > 1:
-			cmd = "gdal_translate %s composite/%s -b 1 -b 2 -b 3 -mask 4 -co COMPRESS=JPEG -co PHOTOMETRIC=YCBCR --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
+			cmd = "gdal_translate %s composite/%s -b 1 -b 2 -b 3 -mask 4 -co COMPRESS=JPEG -co PHOTOMETRIC=YCBCR -co JPEG_QUALITY=80 --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
 		else:
 			cmd = "gdal_translate %s composite/%s -b 1 -mask 2 -co COMPRESS=LZW --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
 		print "Compression :", cmd
