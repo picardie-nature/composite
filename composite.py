@@ -8,12 +8,22 @@ import subprocess
 import time
 import numpy
 import urllib
+import shapely.wkt
+import shapely.geometry
+import sys
+import shutil
 
 class CompoShp:
 	def __init__(self, path_shp):
 		self.shp = ogr.Open(path_shp)
 		self.layer = self.shp.GetLayerByIndex(0)
 		self.extent = self.layer.GetExtent()
+		self.zones = []
+		for feature in self.layer:
+			geom = feature.GetGeometryRef()
+			self.zones.append(shapely.wkt.loads(geom.ExportToWkt()))
+		print "Polygones destination : ",len(self.zones)
+
 
 class ThreadComposite(threading.Thread):
 	def __init__(self, thread_id, x, y, pas, layers, res, n_bande, compo):
@@ -33,11 +43,24 @@ class ThreadComposite(threading.Thread):
 
 		width = height = self.pas/self.res
 		dest_file = "%s/composite_%d_%d.tif"%(self.thread_id, self.x, self.y)
-		if os.path.exists("composite/"+os.path.basename(dest_file)):
+		if os.path.exists("sortie/"+os.path.basename(dest_file)):
 			return True
-		if os.path.exists("composite/"+os.path.basename(dest_file)+".vide"):
+		if os.path.exists("sortie/"+os.path.basename(dest_file)+".vide"):
 			return True
 		
+		## Test si c'est pas une tuile vide
+		tuile = shapely.geometry.Polygon([(self.x,self.y), (self.x,self.y+self.pas), (self.x+self.pas,self.y+self.pas), (self.x+self.pas,self.y), (self.x,self.y)])
+		tuile_vide = True
+		for zone in self.compo.compo.zones:
+			if zone.intersects(tuile):
+				tuile_vide = False
+	
+		if tuile_vide:
+			print self.thread_id, "Passe aucune ortho (1)"
+			f = open("sortie/"+os.path.basename(dest_file)+".vide","w")
+			f.close()
+			return True
+
 		## Rasterize le shape de composition
 		cmd = "gdal_rasterize -tr %F %F -a id -te %d %d %d %d -ot Char %s %s/merge_2154.tif"%(self.res,self.res*-1,self.x,self.y,self.x+self.pas,self.y+self.pas,self.compo.conf["shapefile"],self.thread_id)
 		subprocess.call(cmd, shell=True)
@@ -52,8 +75,8 @@ class ThreadComposite(threading.Thread):
 				nombre_layer+=1
 
 		if nombre_layer == 0:
-			print self.thread_id, "Passe aucune ortho"
-			f = open("composite/"+os.path.basename(dest_file)+".vide","w")
+			print self.thread_id, "Passe aucune ortho (2)"
+			f = open("sortie/"+os.path.basename(dest_file)+".vide","w")
 			f.close()
 			return True
 
@@ -69,11 +92,21 @@ class ThreadComposite(threading.Thread):
 			basename = "%d_%d_l%s" % (self.x/self.pas,self.y/self.pas,layer_n)
 			fichier_tmp = self.compo.wms_query(layer,"%d,%d,%d,%d" % (self.x,self.y,self.x+self.pas,self.y+self.pas) ,width,height)
 			print fichier_tmp, self.thread_id+"/"+basename+".png"
-			os.rename(fichier_tmp,self.thread_id+"/"+basename+".png")
-
-			cmd = "gdal_translate -a_ullr %d %d %d %d -a_srs EPSG:2154 -of GTiff %s.png %s.tif" % (self.x,self.y,self.x+self.pas,self.y+self.pas,self.thread_id+"/"+basename,self.thread_id+"/"+basename)
+			#os.rename(fichier_tmp,self.thread_id+"/"+basename+".png")
+			shutil.move(fichier_tmp,self.thread_id+"/"+basename+".png")
+			
+			# on s'assure du format du png
+			cmd = "convert %s -define png:color-type=6 %s/my.png"%(self.thread_id+"/"+basename+".png", self.thread_id)
 			print self.thread_id, cmd
 			subprocess.call(cmd, shell=True)
+			os.unlink(self.thread_id+"/"+basename+".png")
+
+			# on le transforme en tiff
+			cmd = "gdal_translate -a_ullr %d %d %d %d -a_srs EPSG:2154 -of GTiff %s.png %s.tif" % (self.x,self.y,self.x+self.pas,self.y+self.pas,self.thread_id+"/my",self.thread_id+"/"+basename)
+			print self.thread_id, cmd
+			subprocess.call(cmd, shell=True)
+			os.unlink(self.thread_id+"/my.png")
+
 			wms_src = gdal.Open("%s/%s.tif"%(self.thread_id,basename))
 			for band in range(1,self.compo.conf['n_bande']+1):
 				print self.thread_id, "Bande",band,"layer",layer_n,"..."
@@ -87,7 +120,6 @@ class ThreadComposite(threading.Thread):
 				dest_band = None
 				wms_data = None
 				wms_band = None
-			os.unlink(self.thread_id+"/"+basename+".png")
 			os.unlink(self.thread_id+"/"+basename+".tif")
 
 			# transparence
@@ -103,9 +135,9 @@ class ThreadComposite(threading.Thread):
 		dest = None
 		
 		if self.compo.conf["n_bande"] > 1:
-			cmd = "gdal_translate %s composite/%s -b 1 -b 2 -b 3 -mask 4 -co COMPRESS=JPEG -co PHOTOMETRIC=YCBCR -co JPEG_QUALITY=80 --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
+			cmd = "gdal_translate %s sortie/%s -b 1 -b 2 -b 3 -mask 4 -co COMPRESS=JPEG -co PHOTOMETRIC=YCBCR -co JPEG_QUALITY=80 --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
 		else:
-			cmd = "gdal_translate %s composite/%s -b 1 -mask 2 -co COMPRESS=LZW --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
+			cmd = "gdal_translate %s sortie/%s -b 1 -mask 2 -co COMPRESS=LZW --config GDAL_TIFF_INTERNAL_MASK YES" % (dest_file,os.path.basename(dest_file))
 		print "Compression :", cmd
 		subprocess.call(cmd, shell=True)
 		os.unlink(dest_file)
@@ -135,7 +167,6 @@ class Composite:
 		threads = []
 		while x <= self.x1:
 			while y <= self.y1:
-				print "\n\n======= @",x,y,"========="
 				suivant = False
 				while not suivant:
 					if len(threads) < self.conf["n_thread_max"]:
@@ -154,7 +185,7 @@ class Composite:
 						thread.start()
 						threads.append(thread)
 					else:
-						time.sleep(0.2)
+						time.sleep(0.01)
 				y += self.conf["pas"]
 			x += self.conf["pas"]
 			y = self.y0
@@ -163,16 +194,17 @@ class Composite:
 	def wms_query(self, layer, bbox, width, height):
 		while not self.wms_query_dispo:
 			time.sleep(2)
-			print "\ten attente wms dispo"
+			#print "\ten attente wms dispo"
 		self.wms_query_dispo = False
 		args = {
 			"BBOX": bbox,
-			"WIDTH": width,
-			"HEIGHT": height,
+			"WIDTH": "%d"%(width),
+			"HEIGHT": "%d"%(height),
 			"FORMAT": "image/png",
 			"SRS": "EPSG:2154",
 			"VERSION": "1.1.1",
-			"REQUEST": "GetMap"
+			"REQUEST": "GetMap",
+			"SERVICE": "WMS"
 		}
 		url = "%s&%s"%(layer,urllib.urlencode(args))
 		print "download", url
